@@ -25,12 +25,13 @@ with codecs.open(sys.argv[1], encoding="utf-8") as f:
             temp_a = []
             status = "question"
         if status == "answer":
-            temp_a.append(line.strip()[2:])
+            temp_a.append(line.strip()[2:].strip())
         if status == "right_answers":
             a.append(temp_a)
             if line.strip() != "":
                 r.append(line.strip())
 
+# with codecs.open(sys.argv[1] + ".out", "wt", encoding="utf-8") as f:
 with codecs.open(sys.argv[1], "wt", encoding="utf-8") as f:
     for i in range(len(q)):
         ind = q[i].find(".")
