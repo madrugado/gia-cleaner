@@ -1,3 +1,4 @@
+# coding=utf-8
 import os
 import re
 import collections
@@ -11,11 +12,14 @@ geo_prefix = 'GE'
 soc_prefix = 'OB'
 ans_map = {1: 'A', 2: 'B', 3: 'C', 4: 'D'}
 
+
 def extract_candidate_answer(ans_line):
     return ans_line.strip().split(')', maxsplit=1)[1].strip()
 
+
 def extract_answer(ans_line):
     return ans_line.strip().split('Ответ:', maxsplit=1)[1].strip()
+
 
 def extract_questions(file_path):
     questions = []
@@ -32,6 +36,7 @@ def extract_questions(file_path):
             print('Q: {}\nA: {}\nB: {}\nC: {}\nD: {}\nANS: {}\n'.format(q, a1, a2, a3, a4, ans))
             questions.append((q, ans_letter, a1, a2, a3, a4))
     return questions
+
 
 def extract_geo_questions(file_path):
     questions = []
@@ -51,8 +56,9 @@ def extract_geo_questions(file_path):
             questions.append((q, ans_letter, a1, a2, a3, a4))
     return questions
 
+
 if __name__ == '__main__':
-    merged_questions = collections.defaultdict(list) 
+    merged_questions = collections.defaultdict(list)
     for root, dirs, files in os.walk(questions_dir):
         for f in files:
             f_path = os.path.join(root, f)
