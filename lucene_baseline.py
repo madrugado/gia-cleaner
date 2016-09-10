@@ -17,11 +17,10 @@ from timeit import default_timer
 
 random.seed(0)
 
-DATA_PATH = './data'
-VAL_SET_PATH = './data/validation_set.tsv'
-TRAIN_SET_PATH = '../data/gia-corpus/tsv_tests/all_questions.tsv'
-CK_KEYWORDS_PATH = '../data/GIA_combined.txt'
-DOCS_DIR = '../data/wikipedia_content_based_on_GIA_keyword_one_file_per_keyword_search_clean'
+VAL_SET_PATH = 'data/validation_set.tsv'
+TRAIN_SET_PATH = 'data/gia-corpus/tsv_tests/all_questions.tsv'
+KEYWORDS_PATH = 'data/GIA_keywords'
+DOCS_DIR = 'data/wikipedia_content_based_on_GIA_keyword_one_file_per_keyword_search_clean'
 
 
 def prepare_index(docs_dir, stemmer, min_len=5):
@@ -29,36 +28,29 @@ def prepare_index(docs_dir, stemmer, min_len=5):
     indexer.set('contents', stored=True)
     indexer.set('path', stored=True)
 
+    idx = 0
     p = Pool(4)
     index_start, indexed_documents_count = default_timer(), 0
     for root, dirs, files in os.walk(docs_dir):
         for f in files:
-            if True or random.choice([0, 1, 2]):
-                print(f)
-                with codecs.open(os.path.join(root, f), 'r', 'utf-8') as doc:
-                    articles = filter(lambda x: len(x.split()) >= min_len, doc.readlines())
-                    stemmed_articles = p.map(stem_sentence_and_remove_stopwords, articles)
-                    for article in stemmed_articles:
-                        indexer.add(path=os.path.join(root, f), contents=article)
-                        indexed_documents_count += 1
+            idx += 1
+            if idx % 10 == 0:
+                print('indexed {} files'.format(idx))
 
-                    """ for article in doc.readlines():
-                        if len(article.split()) >= min_len:
-                            article = stem_sentence_and_remove_stopwords(article)
-                            indexer.add(path=os.path.join(root, f), contents=article)
-                            indexed_documents_count += 1
-                    """
-                #break
+            with codecs.open(os.path.join(root, f), 'r', 'utf-8') as doc:
+                articles = filter(lambda x: len(x.split()) >= min_len, doc.readlines())
+                stemmed_articles = p.map(stem_sentence_and_remove_stopwords, articles)
+                for article in stemmed_articles:
+                    indexer.add(path=os.path.join(root, f), contents=article)
+                    indexed_documents_count += 1
+
     indexer.commit()
     print('Added', indexed_documents_count, 'documents to index, spent', default_timer() - index_start, 'sec')
     return indexer
 
 def stem_sentence_and_remove_stopwords(sentence):
-    #print('before alnum', sentence)
     sentence = ''.join(ch for ch in sentence if ch.isalnum() or ch.isspace() or ch == '.,-')
-    #print('after alnum', sentence)
     result = ' '.join(map(stemmer.stem, (x for x in sentence.lower().split() if x not in stop)))
-    #print('after stemmer', result)
     return result
 
 def remove_duplicate_words(q):
@@ -70,9 +62,7 @@ def remove_duplicate_words(q):
     return ' '.join(r)
 
 def stem_sentence_and_remove_stopwords_ck12_keywords(sentence, is_question):
-    #print('before stem', sentence)
     sentence = stem_sentence_and_remove_stopwords(sentence)
-    #print('after stem', sentence)
     result = remove_duplicate_words(sentence)
 
     # WTF???
@@ -104,7 +94,6 @@ def predict_answer(indexer, question, answers, verbose=False, ca=''):
     answers = map(prepare_sentence, answers.split('\t'))
 
     get_score = lambda h: h[0].score if h else 0
-    #print(question, answers)
     score_fun = lambda a: get_score(indexer.search(question + ' ' + a, count=10, scores=True, field='contents'))
     scores = map(score_fun, answers)
     ans = chr(np.argmax(scores) + ord('A'))
@@ -127,30 +116,33 @@ def get_accuracy_on_train_set(indexer):
     df = pd.read_csv(TRAIN_SET_PATH, delimiter='\t', encoding='utf-8')
     df['model_answer'], df['scoreA'], df['scoreB'], df['scoreC'], df['scoreD'] = zip(*map(predictor, df.values))
     ca = (df.model_answer == df.correctAnswer)
-    df[['id', 'scoreA', 'scoreB', 'scoreC', 'scoreD']].to_csv('../data/train_lucene_scores.csv', index=False)
+    df[['id', 'scoreA', 'scoreB', 'scoreC', 'scoreD']].to_csv('data/train_lucene_scores.csv', index=False)
     return ca[ca == True].size * 1.0 / len(df)
 
 def get_submission_from_val(indexer):
     predictor = lambda (id, q, a1, a2, a3, a4): predict_answer(indexer, q, '\t'.join([a1, a2, a3, a4]))
-    df = pd.read_csv('./data/validation_set.tsv', delimiter='\t')
+    df = pd.read_csv(VAL_SET_PATH, delimiter='\t')
     df['correctAnswer'], df['scoreA'], df['scoreB'], df['scoreC'], df['scoreD'] = zip(*map(predictor, df.values))
-    df[['id', 'correctAnswer']].to_csv('./data/submit.csv', index=False)
-    df[['id', 'scoreA', 'scoreB', 'scoreC', 'scoreD']].to_csv('./data/val_lucene_scores.csv', index=False)
+    df[['id', 'correctAnswer']].to_csv('data/submit.csv', index=False)
+    df[['id', 'scoreA', 'scoreB', 'scoreC', 'scoreD']].to_csv('data/val_lucene_scores.csv', index=False)
 
 if __name__ == '__main__':
     stop = set(stopwords.words('russian'))
     stemmer = SnowballStemmer('russian')
 
-    ck_keywords = filter(lambda w: w not in stop, codecs.open(CK_KEYWORDS_PATH, 'r', 'utf-8').read().split())
+    keywords = []
+    keyword_filenames = os.listdir(KEYWORDS_PATH)
+    for keyword_filename in keyword_filenames:
+        kws_path = os.path.join(KEYWORDS_PATH, keyword_filename)
+        kws = codecs.open(kws_path, 'r', 'utf-8').read().split()
+        keywords.extend(kws)
+    print('got {} keywords'.format(len(keywords)))
+
+    ck_keywords = filter(lambda w: w not in stop, keywords)
     ck_keywords = set(filter(len, map(stemmer.stem, ck_keywords)))
 
     lucene.initVM()
     indexer = prepare_index(DOCS_DIR, stemmer)
-    #if not os.path.exists('lucene_index.pkl'):
-    #    indexer = prepare_index(DOCS_DIR, stemmer)
-    #    pickle.dump(indexer, open('lucene_index.pkl', 'wb'))
-    #else:
-    #    indexer = pickle.load(open('lucene_index.pkl', 'rb'))
     print('Accuracy on train set:', get_accuracy_on_train_set(indexer))
     print('Preparing submission...')
     get_submission_from_val(indexer)
