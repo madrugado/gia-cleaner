@@ -1,30 +1,30 @@
+# coding: utf-8
 import os
 from os import path as osp
 
 from nltk.tokenize import word_tokenize
 from nltk.util import ngrams, bigrams, trigrams, skipgrams
+from nltk.corpus import stopwords
 from collections import defaultdict
 from itertools import product, combinations
 from math import log
 from time import clock, time
 from multiprocessing import Pool
 import operator
-from nltk.stem import WordNetLemmatizer
 import re
 from nltk.stem.snowball import SnowballStemmer
 from gensim.models import Word2Vec
 import sys
+import codecs
 
-lemmatizer = WordNetLemmatizer()
 pat = re.compile('[^\w ]')
-stemmer = SnowballStemmer('english')
-model = Word2Vec.load(sys.argv[1] if len(sys.argv) > 1 else "../data/w2v_model_large_50")
+stemmer = SnowballStemmer('russian')
 
-NUM_WORKERS = 20
+NUM_WORKERS = 10
 
-DATA_PATH = '../data'
-DOCS_DIR = osp.join(DATA_PATH, 'new_lucene_index')
-TRAIN_SET_PATH = osp.join(DATA_PATH, 'training_set.tsv')
+DATA_PATH = 'data'
+DOCS_DIR = osp.join(DATA_PATH, 'wikipedia_content_based_on_GIA_keyword_one_file_per_keyword_search_clean')
+TRAIN_SET_PATH = osp.join(DATA_PATH, 'gia-corpus/tsv_tests/all_questions.tsv')
 VALIDATION_SET_PATH = osp.join(DATA_PATH, 'validation_set.tsv')
 
 
@@ -51,7 +51,6 @@ class NGramsContainer:
         if tokenize:
             text = word_tokenize(text)
 
-        #text = map(lemmatizer.lemmatize, text)
         text = map(stemmer.stem, text)
 
         self.untouched_text = list(text)
@@ -176,7 +175,7 @@ def compute_PMI(joint_qa_ndgrams, global_ngram_count, global_joint_ngram_count, 
         a_ngram_freq = global_ngram_count[a_ngram] / float(number_of_windows)
         if q_ngram_freq > 0 and a_ngram_freq > 0 and joint_freq > 0:
             PMI[joint_ngram] = max(0, log(joint_freq / (q_ngram_freq * a_ngram_freq)))
-            print joint_ngram, PMI[joint_ngram]
+            print collection_str(joint_ngram), PMI[joint_ngram]
         else:
             PMI[joint_ngram] = 0
     return PMI
@@ -219,6 +218,7 @@ def test():
 
 
 def get_extended_question(question):
+    return question
     sentence = pat.sub('', question)
     result = map(stemmer.stem, sentence.lower().split())
     new_result = []
@@ -230,15 +230,15 @@ def get_extended_question(question):
 
 
 def extract_ngrams_from_question_and_answers(question, answers):
-    question_ngrams = NGramsContainer(question.lower().decode('ascii', errors='ignore'))
+    question_ngrams = NGramsContainer(question.lower())
     answerA_ngrams = NGramsContainer(
-        get_extended_question(answers.A.lower().decode('ascii', errors='ignore')))
+        get_extended_question(answers.A.lower()))
     answerB_ngrams = NGramsContainer(
-        get_extended_question(answers.B.lower().decode('ascii', errors='ignore')))
+        get_extended_question(answers.B.lower()))
     answerC_ngrams = NGramsContainer(
-        get_extended_question(answers.C.lower().decode('ascii', errors='ignore')))
+        get_extended_question(answers.C.lower()))
     answerD_ngrams = NGramsContainer(
-        get_extended_question(answers.D.lower().decode('ascii', errors='ignore')))
+        get_extended_question(answers.D.lower()))
 
     qa_ngrams = question_ngrams.all_ngrams | answerA_ngrams.all_ngrams | answerB_ngrams.all_ngrams \
         | answerC_ngrams.all_ngrams | answerD_ngrams.all_ngrams
@@ -287,10 +287,10 @@ def extract_ngram_counts_from_text(f_path):
     joint_ngram_count = defaultdict(int)
     number_of_windows = 0
 
-    with open(f_path, 'r') as doc:
+    with codecs.open(f_path, 'r', 'utf-8') as doc:
         text = doc.readlines()
-        text = ' '.join([x.strip().decode('utf8', 'ignore').encode('ascii','ignore') for x in text])  # concatenate whole file into one string
-        text = ''.join([x for x in text if x not in ':.,?()+"_'])
+        text = ' '.join([x.strip() for x in text])  # concatenate whole file into one string
+        text = ''.join([x for x in text if x not in u'—;:.,?()+"_-%'])
 
         text_words = word_tokenize(text.lower())
 
@@ -320,12 +320,24 @@ def extract_ngram_counts_from_text(f_path):
 
         return (ngram_count, joint_ngram_count, number_of_windows)
 
-if __name__ == '__main__':
-    with open('../data/SMART_stopwords.txt', 'r') as smart_stopwwods_file:
-        stopwords = set([x.strip() for x in smart_stopwwods_file.readlines() if len(x) > 1])
-    stopwords.add('\'s')
+def collection_str(collection):
+    if isinstance(collection, list):
+        brackets = u'[%s]'
+        single_add = u''
+    elif isinstance(collection, tuple):
+        brackets = u'(%s)'
+        single_add = u','
+    else:
+        return unicode(collection)
+    items = u', '.join([collection_str(x) for x in collection])
+    if len(collection) == 1:
+        items += single_add
+    return brackets % items
 
-    test()
+if __name__ == '__main__':
+    stopwords = set(map(stemmer.stem, stopwords.words('russian')))
+
+    #test()
     print 'test ok'
 
     true_answers = dict()
@@ -342,7 +354,7 @@ if __name__ == '__main__':
     global_ngrams = set()
     global_joint_ngrams = set()
 
-    with open(TRAIN_SET_PATH, 'r') as train_file:
+    with codecs.open(TRAIN_SET_PATH, 'r', 'utf-8') as train_file:
         train_questions = [x.strip() for x in train_file.readlines()]
 
         qa_ngram_prep_time = clock()
@@ -359,6 +371,7 @@ if __name__ == '__main__':
             global_joint_ngrams.update(global_joint_ngrams_for_each_answer[id].all_ngrams)
 
     # TODO: remove code duplication with prev parsing.
+    """
     with open(VALIDATION_SET_PATH, 'r') as train_file:
         val_questions = [x.strip() for x in train_file.readlines()]
 
@@ -377,6 +390,7 @@ if __name__ == '__main__':
             global_ngrams.update(qa_ngrams)
             global_joint_ngrams_for_each_answer[id] = qa_joint_ngrams
             global_joint_ngrams.update(global_joint_ngrams_for_each_answer[id].all_ngrams)
+    """
 
     print 'prepared', len(global_joint_ngrams), 'ngrams for', clock() - qa_ngram_prep_time
 
@@ -391,6 +405,7 @@ if __name__ == '__main__':
             f_path = osp.join(root, f)
             files_to_process.append(f_path)
 
+    files_to_process = files_to_process[:10]
     print len(files_to_process), 'files to process'
 
     ngram_extractors = Pool(NUM_WORKERS)
@@ -411,15 +426,18 @@ if __name__ == '__main__':
     sorted_joint_ngram_counts = sorted(global_joint_ngram_count.items(), key=operator.itemgetter(1), reverse=True)
 
     print 'top 30 ngrams'
-    print sorted_ngram_counts[:30]
+    for i in range(30):
+        print collection_str(sorted_ngram_counts[i])
 
-    print 'top 30 joint ngrams'
-    print sorted_joint_ngram_counts[:30]
+    print '\ntop 30 joint ngrams'
+    for i in range(30):
+        print collection_str(sorted_joint_ngram_counts[i])
 
+    """
     print 'VALIDATION'
     with open('result.csv', 'w') as result:
         result.write('id,correctAnswer\n')
-        with open('../data/val_PMI_scores.csv', 'w') as pmi_scores:
+        with open('data/val_PMI_scores.csv', 'w') as pmi_scores:
             pmi_scores.write('id,PMI_score_A,PMI_score_B,PMI_score_C,PMI_score_D\n')
 
             for id in sorted(val_question_ids):
@@ -437,9 +455,10 @@ if __name__ == '__main__':
 
                 pmi_scores.write('{0},{1},{2},{3},{4}\n'.format(id, average_PMI_A, average_PMI_B, average_PMI_C, average_PMI_D))
                 result.write(id + ',' + ans + '\n')
+    """
 
     print 'TRAIN'
-    with open('./data/train_PMI_scores.csv', 'w') as pmi_scores:
+    with codecs.open('data/train_PMI_scores.csv', 'w', 'utf-8') as pmi_scores:
         pmi_scores.write('id,PMI_score_A,PMI_score_B,PMI_score_C,PMI_score_D\n')
 
         for id in sorted(train_question_ids):
