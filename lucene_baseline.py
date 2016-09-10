@@ -135,6 +135,7 @@ if __name__ == '__main__':
     for keyword_filename in keyword_filenames:
         kws_path = os.path.join(KEYWORDS_PATH, keyword_filename)
         kws = codecs.open(kws_path, 'r', 'utf-8').read().split()
+        kws = [kw.strip().lower() for kw in kws]
         keywords.extend(kws)
     print('got {} keywords'.format(len(keywords)))
 
